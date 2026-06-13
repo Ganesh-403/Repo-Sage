@@ -1,0 +1,49 @@
+# ─── Environment ───
+.env
+.env.local
+.env.production
+
+# ─── Python ───
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# ─── Virtual Environments ───
+.venv/
+venv/
+ENV/
+
+# ─── ChromaDB persistence ───
+chroma_db/
+
+# ─── Cloned repos (temporary) ───
+tmp/
+/tmp/
+
+# ─── IDE ───
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ─── OS ───
+.DS_Store
+Thumbs.db
+
+# ─── Docker ───
+docker-compose.override.yml
+
+# ─── Node (if any JS tooling) ───
+node_modules/
+
+# ─── Pytest ───
+.pytest_cache/
+htmlcov/
+.coverage
