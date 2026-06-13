@@ -37,6 +37,19 @@ RepoSage operates entirely locally. It utilizes Ollama running the `qwen2.5-code
 
 ### Phase 1: Ingestion Pipeline
 
+```mermaid
+graph TD
+    A[Source Code <br/> GitHub or Local] --> B[Language-Aware Parser]
+    B -->|Python AST| C[Chunk Builder]
+    B -->|JS/TS Regex| C
+    C --> D[GraphRAG Builder <br/> Extracts Function Calls]
+    D --> E[(NetworkX Knowledge Graph)]
+    C --> F[Context Injector <br/> File-Level Summaries]
+    F --> G[Ollama Embeddings <br/> nomic-embed-text]
+    G --> H[(ChromaDB Vector Store)]
+```
+
+
 1. **Source Resolution**: The system accepts public GitHub URLs (cloning via GitPython) or local file URIs (`local:///...`).
 2. **Language-Aware Parsing**: Files are routed to specific chunkers. Python utilizes the native `ast` module; JS/TS utilizes regex patterns.
 3. **Graph Construction**: The parser identifies function declarations and invocation calls (`ast.Call`), constructing a NetworkX directed graph.
@@ -44,6 +57,22 @@ RepoSage operates entirely locally. It utilizes Ollama running the `qwen2.5-code
 5. **Embedding & Persistence**: Chunks are embedded using `nomic-embed-text` and persisted in a local ChromaDB collection alongside the serialized graph.
 
 ### Phase 2: Agentic Query Pipeline
+
+```mermaid
+graph TD
+    Q[User Query] --> A{LangGraph Autonomous Agent}
+    A -->|Investigates| B[Tool: semantic_search]
+    B --> C{Hybrid Search}
+    C -->|Lexical| D[BM25 Index]
+    C -->|Semantic| E[(ChromaDB)]
+    C --> F[Reciprocal Rank Fusion]
+    F --> G[Graph Traversal <br/> Fetch Callers/Callees]
+    G --> A
+    A -->|Missing Context?| H[Tool: read_file]
+    H -->|Read Full Source| A
+    A -->|Synthesis Complete| I[Final Answer <br/> with Exact Citations]
+```
+
 
 1. **Tool-Equipped Agent**: The user query is passed to a LangGraph workflow controlling the `qwen2.5-coder:7b` model.
 2. **Semantic Search**: The agent invokes the `semantic_search` tool, which triggers a Hybrid Search (Vector + BM25).
