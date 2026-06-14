@@ -57,7 +57,7 @@ summarizer = RepoSummarizer(
 )
 query_transformer = QueryTransformer(
     ollama_base_url=OLLAMA_BASE_URL,
-    ollama_model=OLLAMA_MODEL,
+    model=OLLAMA_MODEL,
 )
 
 # Track indexing status
