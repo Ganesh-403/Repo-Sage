@@ -169,8 +169,8 @@ Docker Compose allows you to run both the frontend and backend in containerized 
 
 3. **Access the Application**:
    * **Frontend Web UI:** Go to `http://localhost:8501`
-   * **Backend API Docs:** Go to `http://localhost:8000/docs`
-   * **Backend Health Check:** Verify the connection to Ollama by visiting `http://localhost:8000/health`
+   * **Backend API Docs:** Go to `http://localhost:8001/docs`
+   * **Backend Health Check:** Verify the connection to Ollama by visiting `http://localhost:8001/health`
 
 
 ### 4. Enabling Local Real-Time Synchronization (Optional)

@@ -13,6 +13,7 @@ when they first connect to a repository — giving instant context
 before they start asking questions.
 """
 
+import os
 import logging
 from typing import Optional
 from pathlib import Path
@@ -93,7 +94,13 @@ class RepoSummarizer:
         Returns:
             Dict with 'summary' (markdown) and 'metadata' (stats).
         """
-        collection_dir = f"{self.persist_dir}/{repo_name}"
+        collection_dir = os.path.join(self.persist_dir, repo_name)
+
+        if not os.path.exists(collection_dir):
+            return {
+                "summary": "Repository summary not found or not indexed.",
+                "metadata": {},
+            }
 
         try:
             vectorstore = Chroma(
@@ -163,7 +170,7 @@ class RepoSummarizer:
             "metadata": {
                 "repo": repo_name,
                 "total_chunks": total_chunks,
-                "languages": sorted(languages),
+                "languages": sorted(list({str(l) for l in languages if l})),
                 "files_sampled": len(files),
             },
         }

@@ -168,7 +168,17 @@ class DocstringGenerator:
             return chunks
             
         for chunk in chunks:
-            context_header = f"// Context: This code belongs to a file with the following purpose: {file_summary}\n\n"
+            lang = getattr(chunk, "language", "").lower()
+            if lang in ("javascript", "typescript", "java", "cpp", "c", "csharp", "kotlin", "swift", "scala", "php", "rust", "go", "css", "jsx", "tsx"):
+                comment_start, comment_end = "// ", ""
+            elif lang in ("sql",):
+                comment_start, comment_end = "-- ", ""
+            elif lang in ("html", "xml"):
+                comment_start, comment_end = "<!-- ", " -->"
+            else:
+                comment_start, comment_end = "# ", ""
+
+            context_header = f"{comment_start}Context: This code belongs to a file with the following purpose: {file_summary}{comment_end}\n\n"
             chunk.content = context_header + chunk.content
             
         return chunks

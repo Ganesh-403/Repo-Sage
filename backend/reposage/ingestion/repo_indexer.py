@@ -11,6 +11,7 @@ all the chunkers, handles file filtering, and manages the vector store.
 import os
 import shutil
 import logging
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -82,6 +83,7 @@ class RepoIndexer:
         persist_dir: str = "./chroma_db",
         clone_dir: str = "./tmp/reposage",
         ollama_base_url: str = "http://localhost:11434",
+        ollama_model: str = "qwen2.5-coder:7b",
         ollama_embed_model: str = "nomic-embed-text",
     ):
         self.persist_dir = persist_dir
@@ -95,10 +97,10 @@ class RepoIndexer:
         # Initialize docstring generator for contextual retrieval
         self.context_gen = DocstringGenerator(
             ollama_base_url=ollama_base_url,
-            model="llama3",  # default model
+            model=ollama_model,
         )
 
-    async def index_repo(self, github_url: str, github_token: Optional[str] = None) -> dict:
+    def index_repo(self, github_url: str, github_token: Optional[str] = None) -> dict:
         """Clone a GitHub repo, chunk all code files, embed and store.
 
         Args:
@@ -222,12 +224,25 @@ class RepoIndexer:
         if os.path.exists(collection_dir):
             shutil.rmtree(collection_dir)
 
+        # Sanitize metadata for Chroma (Chroma accepts only str, int, float, bool)
+        chroma_docs = []
+        for doc in all_chunks:
+            sanitized_metadata = doc.metadata.copy()
+            if "calls" in sanitized_metadata and isinstance(sanitized_metadata["calls"], list):
+                sanitized_metadata["calls"] = ",".join(sanitized_metadata["calls"])
+            
+            # Re-create Document to avoid modifying the original list reference in all_chunks
+            chroma_docs.append(Document(
+                page_content=doc.page_content,
+                metadata=sanitized_metadata
+            ))
+
         # Batch embed in groups of 100 to avoid rate limits
         batch_size = 100
         vectorstore = None
 
-        for i in range(0, len(all_chunks), batch_size):
-            batch = all_chunks[i:i + batch_size]
+        for i in range(0, len(chroma_docs), batch_size):
+            batch = chroma_docs[i:i + batch_size]
             if vectorstore is None:
                 vectorstore = Chroma.from_documents(
                     batch, self.embed,
@@ -247,6 +262,19 @@ class RepoIndexer:
             logger.info(f"Saved BM25 documents to {bm25_path}")
         except Exception as e:
             logger.error(f"Failed to save BM25 documents: {e}")
+
+        # Save metadata JSON to avoid initializing Chroma just to read collection stats
+        meta_path = os.path.join(collection_dir, "metadata.json")
+        try:
+            with open(meta_path, "w") as f:
+                json.dump({
+                    "name": repo_name,
+                    "chunks": len(all_chunks),
+                    "files_processed": files_processed,
+                }, f)
+            logger.info(f"Saved metadata to {meta_path}")
+        except Exception as e:
+            logger.error(f"Failed to save metadata.json: {e}")
 
         # Build Knowledge Graph (GraphRAG)
         try:
@@ -270,13 +298,13 @@ class RepoIndexer:
         except Exception as e:
             logger.error(f"Failed to save Knowledge Graph: {e}")
 
-        if not is_local:
-            # Clean up cloned repo to save disk space
-            # (we keep only the embeddings, not the source code)
-            try:
-                shutil.rmtree(tmp_path)
-            except Exception:
-                pass  # Non-critical cleanup failure
+        # Keep remote clones so the agent's read_file tool can read original files.
+        # They will be cleaned up in delete_repo.
+        # if not is_local:
+        #     try:
+        #         shutil.rmtree(tmp_path)
+        #     except Exception:
+        #         pass
 
         return {
             "repo": repo_name,
@@ -300,27 +328,44 @@ class RepoIndexer:
 
         for repo_dir in persist_path.iterdir():
             if repo_dir.is_dir():
-                try:
-                    vs = Chroma(
-                        persist_directory=str(repo_dir),
-                        embedding_function=self.embed,
-                        collection_name=repo_dir.name,
-                    )
-                    count = vs._collection.count()
-                    repos.append({
-                        "name": repo_dir.name,
-                        "chunks": count,
-                    })
-                except Exception:
-                    repos.append({
-                        "name": repo_dir.name,
-                        "chunks": -1,  # Unknown — collection may be corrupted
-                    })
+                # Try reading metadata.json first (fastest)
+                meta_path = repo_dir / "metadata.json"
+                if meta_path.exists():
+                    try:
+                        with open(meta_path, "r") as f:
+                            meta = json.load(f)
+                        repos.append({
+                            "name": repo_dir.name,
+                            "chunks": meta.get("chunks", 0),
+                        })
+                        continue
+                    except Exception:
+                        pass
+
+                # Fallback: load bm25_docs.pkl size
+                bm25_path = repo_dir / "bm25_docs.pkl"
+                if bm25_path.exists():
+                    try:
+                        with open(bm25_path, "rb") as f:
+                            docs = pickle.load(f)
+                        repos.append({
+                            "name": repo_dir.name,
+                            "chunks": len(docs),
+                        })
+                        continue
+                    except Exception:
+                        pass
+
+                # Ultimate fallback
+                repos.append({
+                    "name": repo_dir.name,
+                    "chunks": -1,
+                })
 
         return repos
 
     def delete_repo(self, repo_name: str) -> bool:
-        """Delete an indexed repository's embeddings.
+        """Delete an indexed repository's embeddings and clone directory.
 
         Args:
             repo_name: Name of the repository to delete.
@@ -328,11 +373,21 @@ class RepoIndexer:
         Returns:
             True if successfully deleted, False if not found.
         """
+        deleted = False
         collection_dir = os.path.join(self.persist_dir, repo_name)
         if os.path.exists(collection_dir):
             shutil.rmtree(collection_dir)
-            return True
-        return False
+            deleted = True
+
+        clone_path = os.path.join(self.clone_dir, repo_name)
+        if os.path.exists(clone_path):
+            try:
+                shutil.rmtree(clone_path)
+                deleted = True
+            except Exception as e:
+                logger.warning(f"Failed to delete clone directory {clone_path}: {e}")
+
+        return deleted
 
     @staticmethod
     def _extract_repo_name(github_url: str) -> str:

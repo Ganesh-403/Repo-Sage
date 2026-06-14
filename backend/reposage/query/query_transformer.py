@@ -115,8 +115,8 @@ class QueryTransformer:
             try:
                 docs = retriever.invoke(q)
                 for doc in docs[:k_per_query]:
-                    # Deduplicate by content hash
-                    content_key = hash(doc.page_content[:200])
+                    # Deduplicate by full content string
+                    content_key = doc.page_content.strip()
                     if content_key not in seen_content:
                         seen_content.add(content_key)
                         all_docs.append(doc)

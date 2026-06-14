@@ -47,6 +47,7 @@ indexer = RepoIndexer(
     persist_dir=CHROMA_PERSIST_DIR,
     clone_dir=CLONE_DIR,
     ollama_base_url=OLLAMA_BASE_URL,
+    ollama_model=OLLAMA_MODEL,
     ollama_embed_model=OLLAMA_EMBED_MODEL,
 )
 summarizer = RepoSummarizer(
@@ -159,7 +160,7 @@ async def health_check():
 
 
 @app.post("/index", response_model=IndexResponse, tags=["Indexing"])
-async def index_repository(request: IndexRequest):
+def index_repository(request: IndexRequest):
     """Index a GitHub repository for querying.
 
     Clones the repository, parses all code files using language-aware
@@ -181,7 +182,7 @@ async def index_repository(request: IndexRequest):
 
     try:
         token = request.github_token or GITHUB_TOKEN
-        result = await indexer.index_repo(request.github_url, github_token=token)
+        result = indexer.index_repo(request.github_url, github_token=token)
         indexing_status[repo_name] = {"status": "done", "result": result}
         return IndexResponse(**result)
     except ValueError as e:
@@ -194,7 +195,7 @@ async def index_repository(request: IndexRequest):
 
 
 @app.get("/index/status/{repo_name}", tags=["Indexing"])
-async def get_index_status(repo_name: str):
+def get_index_status(repo_name: str):
     """Check the indexing status of a repository."""
     if repo_name not in indexing_status:
         raise HTTPException(status_code=404, detail="No indexing task found for this repo")
@@ -202,7 +203,7 @@ async def get_index_status(repo_name: str):
 
 
 @app.post("/query", response_model=QueryResponse, tags=["Query"])
-async def query_repository(request: QueryRequest):
+def query_repository(request: QueryRequest):
     """Ask a question about an indexed repository.
 
     Uses RAG to retrieve relevant code chunks and generate an answer
@@ -212,6 +213,13 @@ async def query_repository(request: QueryRequest):
         raise HTTPException(
             status_code=500,
             detail="OLLAMA_BASE_URL not configured.",
+        )
+
+    collection_dir = os.path.join(CHROMA_PERSIST_DIR, request.repo_name)
+    if not os.path.exists(collection_dir):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Repository '{request.repo_name}' not found or not indexed.",
         )
 
     try:
@@ -251,6 +259,13 @@ async def query_stream(request: QueryRequest):
     if not OLLAMA_BASE_URL:
         raise HTTPException(status_code=500, detail="OLLAMA_BASE_URL not configured.")
 
+    collection_dir = os.path.join(CHROMA_PERSIST_DIR, request.repo_name)
+    if not os.path.exists(collection_dir):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Repository '{request.repo_name}' not found or not indexed.",
+        )
+
     try:
         engine = CodeRAGEngine(
             repo_name=request.repo_name,
@@ -262,7 +277,7 @@ async def query_stream(request: QueryRequest):
     except Exception as e:
         raise HTTPException(
             status_code=404,
-            detail=f"Repository '{request.repo_name}' not found.",
+            detail=f"Repository '{request.repo_name}' not found. Error: {e}",
         )
 
     async def event_generator():
@@ -287,14 +302,14 @@ async def query_stream(request: QueryRequest):
 
 
 @app.get("/repos", tags=["Repositories"])
-async def list_repositories():
+def list_repositories():
     """List all indexed repositories with their chunk counts."""
     repos = indexer.list_repos()
     return {"repos": repos, "count": len(repos)}
 
 
 @app.get("/repos/{repo_name}/summary", tags=["Repositories"])
-async def get_repo_summary(repo_name: str):
+def get_repo_summary(repo_name: str):
     """Get a high-level summary of an indexed repository.
 
     Returns tech stack, architecture overview, key modules,
@@ -307,7 +322,7 @@ async def get_repo_summary(repo_name: str):
 
 
 @app.delete("/repos/{repo_name}", tags=["Repositories"])
-async def delete_repository(repo_name: str):
+def delete_repository(repo_name: str):
     """Delete an indexed repository's embeddings."""
     deleted = indexer.delete_repo(repo_name)
     if not deleted:

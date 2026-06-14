@@ -23,6 +23,7 @@ from langchain_community.vectorstores import Chroma
 from langchain_community.retrievers import BM25Retriever
 from langchain_core.messages import SystemMessage, HumanMessage
 import pickle
+from .query_transformer import QueryTransformer
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +108,10 @@ class CodeRAGEngine:
             model=ollama_model,
             temperature=0,
         )
+        self.query_transformer = QueryTransformer(
+            ollama_base_url=ollama_base_url,
+            model=ollama_model,
+        )
         
         # Load BM25 index if available
         self.bm25_retriever = None
@@ -190,12 +195,12 @@ class CodeRAGEngine:
         doc_map = {}
         
         for rank, doc in enumerate(vector_docs):
-            content_key = hash(doc.page_content)
+            content_key = doc.page_content.strip()
             doc_map[content_key] = doc
             fused_scores[content_key] = fused_scores.get(content_key, 0) + 1 / (rank + k)
             
         for rank, doc in enumerate(bm25_docs):
-            content_key = hash(doc.page_content)
+            content_key = doc.page_content.strip()
             doc_map[content_key] = doc
             fused_scores[content_key] = fused_scores.get(content_key, 0) + 1 / (rank + k)
             
@@ -224,14 +229,18 @@ class CodeRAGEngine:
             question, chat_history or []
         )
 
-        # Retrieve relevant code chunks
-        vector_retriever = self.vectorstore.as_retriever(search_kwargs={"k": k * 2})
-        vector_docs = vector_retriever.invoke(standalone_question)
+        # Retrieve relevant code chunks using query expansion
+        vector_retriever = self.vectorstore.as_retriever(search_kwargs={"k": k})
+        vector_docs = self.query_transformer.expand_and_retrieve(
+            standalone_question, vector_retriever, k_per_query=k
+        )
         
         bm25_docs = []
         if self.bm25_retriever:
-            self.bm25_retriever.k = k * 2
-            bm25_docs = self.bm25_retriever.invoke(standalone_question)
+            self.bm25_retriever.k = k
+            bm25_docs = self.query_transformer.expand_and_retrieve(
+                standalone_question, self.bm25_retriever, k_per_query=k
+            )
             
         docs = self._reciprocal_rank_fusion(vector_docs, bm25_docs)[:k]
 
@@ -311,14 +320,18 @@ class CodeRAGEngine:
             question, chat_history or []
         )
 
-        # Retrieve
-        vector_retriever = self.vectorstore.as_retriever(search_kwargs={"k": k * 2})
-        vector_docs = vector_retriever.invoke(standalone_question)
+        # Retrieve using query expansion
+        vector_retriever = self.vectorstore.as_retriever(search_kwargs={"k": k})
+        vector_docs = self.query_transformer.expand_and_retrieve(
+            standalone_question, vector_retriever, k_per_query=k
+        )
         
         bm25_docs = []
         if self.bm25_retriever:
-            self.bm25_retriever.k = k * 2
-            bm25_docs = self.bm25_retriever.invoke(standalone_question)
+            self.bm25_retriever.k = k
+            bm25_docs = self.query_transformer.expand_and_retrieve(
+                standalone_question, self.bm25_retriever, k_per_query=k
+            )
             
         docs = self._reciprocal_rank_fusion(vector_docs, bm25_docs)[:k]
 

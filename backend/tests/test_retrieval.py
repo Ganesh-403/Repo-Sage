@@ -200,7 +200,7 @@ class TestQueryTransformerLogic:
         seen = set()
         unique = []
         for doc in docs:
-            key = hash(doc.page_content[:200])
+            key = doc.page_content.strip()
             if key not in seen:
                 seen.add(key)
                 unique.append(doc)

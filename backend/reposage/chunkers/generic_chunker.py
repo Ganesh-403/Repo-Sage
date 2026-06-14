@@ -50,9 +50,19 @@ class GenericChunker:
         ext = Path(file_path).suffix.lstrip(".").lower()
         lang = self._detect_language(ext)
 
+        # Detect comment style
+        if lang in ("javascript", "typescript", "java", "cpp", "c", "csharp", "kotlin", "swift", "scala", "php", "rust", "go", "css", "jsx", "tsx"):
+            comment_start, comment_end = "// ", ""
+        elif lang in ("sql",):
+            comment_start, comment_end = "-- ", ""
+        elif lang in ("html", "xml"):
+            comment_start, comment_end = "<!-- ", " -->"
+        else:
+            comment_start, comment_end = "# ", ""
+
         # Small files: return as a single chunk
         if len(lines) <= self.chunk_size:
-            header = f"// File: {Path(file_path).name} (lines 1-{len(lines)})\n"
+            header = f"{comment_start}File: {Path(file_path).name} (lines 1-{len(lines)}){comment_end}\n"
             return [CodeChunk(
                 content=header + source,
                 file_path=file_path,
@@ -76,7 +86,7 @@ class GenericChunker:
             chunk_name = f"{Path(file_path).stem}_part{chunk_idx}"
 
             # Add file context header for searchability
-            header = f"// File: {Path(file_path).name} (lines {start + 1}-{end})\n"
+            header = f"{comment_start}File: {Path(file_path).name} (lines {start + 1}-{end}){comment_end}\n"
             searchable = header + chunk_content
 
             chunks.append(CodeChunk(

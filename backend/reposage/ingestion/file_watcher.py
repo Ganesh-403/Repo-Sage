@@ -32,7 +32,10 @@ class RepoSyncHandler(FileSystemEventHandler):
             except Exception as e:
                 print(f"[Real-Time Sync] Failed to connect to API: {e}")
 
-def start_watching(local_repo_path: str, api_url: str = "http://localhost:8000"):
+def start_watching(local_repo_path: str, api_url: str = None):
+    if api_url is None:
+        api_url = os.getenv("BACKEND_URL", "http://localhost:8001")
+
     if not os.path.exists(local_repo_path):
         print(f"Path {local_repo_path} does not exist.")
         return

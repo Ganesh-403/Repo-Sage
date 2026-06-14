@@ -7,6 +7,9 @@ RUN pip install --no-cache-dir \
     streamlit==1.41.1 \
     requests==2.32.3
 
+# Copy Streamlit config
+COPY .streamlit/ .streamlit/
+
 # Copy application
 COPY . .
 

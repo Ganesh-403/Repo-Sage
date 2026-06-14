@@ -3,6 +3,7 @@ import logging
 from typing import TypedDict, Annotated, Sequence, Optional
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage, AIMessage, ToolMessage
 from langgraph.graph import StateGraph, END
+from langgraph.graph.message import add_messages
 from langchain_core.tools import tool
 from langchain_ollama import ChatOllama
 from .rag_engine import CodeRAGEngine
@@ -10,7 +11,7 @@ from .rag_engine import CodeRAGEngine
 logger = logging.getLogger(__name__)
 
 class AgentState(TypedDict):
-    messages: Annotated[Sequence[BaseMessage], "The messages in the conversation"]
+    messages: Annotated[Sequence[BaseMessage], add_messages]
     repo_name: str
     
 class CodeAgentEngine:
@@ -54,6 +55,27 @@ class CodeAgentEngine:
             """Read the full content of a specific file from the repository."""
             full_path = os.path.join(self.clone_dir, self.repo_name, file_path)
             if not os.path.exists(full_path):
+                # Fallback: Try to reconstruct file from BM25 database
+                if self.rag_engine.bm25_retriever and self.rag_engine.bm25_retriever.docs:
+                    normalized_target = file_path.replace("\\", "/").strip("/")
+                    file_chunks = [
+                        doc for doc in self.rag_engine.bm25_retriever.docs
+                        if doc.metadata.get("file", "").replace("\\", "/").strip("/") == normalized_target
+                    ]
+                    if file_chunks:
+                        # Sort chunks by line_start
+                        file_chunks.sort(key=lambda d: d.metadata.get("line_start", 0))
+                        reconstructed_content = []
+                        for doc in file_chunks:
+                            content = doc.page_content
+                            # Contextual Retrieval strip logic
+                            if content.startswith("// Context: ") or content.startswith("# Context: "):
+                                parts = content.split("\n\n", 1)
+                                if len(parts) > 1:
+                                    content = parts[1]
+                            reconstructed_content.append(content)
+                        return "\n\n".join(reconstructed_content)
+
                 return f"Error: Could not read file {file_path}. It might not exist."
             
             try:
@@ -123,11 +145,24 @@ class CodeAgentEngine:
                     
         messages.append(HumanMessage(content=question))
         
-        result = self.app.invoke({"messages": messages, "repo_name": self.repo_name})
-        final_message = result["messages"][-1].content
-        
-        return {
-            "answer": final_message,
-            "sources": ["Agent Tool Execution"],
-            "chunks_used": 0
-        }
+        try:
+            result = self.app.invoke(
+                {"messages": messages, "repo_name": self.repo_name},
+                config={"recursion_limit": 10}
+            )
+            final_message = result["messages"][-1].content
+            if not final_message or not final_message.strip():
+                raise ValueError("Agent returned empty response")
+                
+            return {
+                "answer": final_message,
+                "sources": ["Agent Tool Execution"],
+                "chunks_used": 0
+            }
+        except Exception as e:
+            logger.warning(f"Agent execution failed: {e}. Falling back to standard RAG.")
+            return self.rag_engine.query(
+                question=question,
+                k=k,
+                chat_history=chat_history
+            )
