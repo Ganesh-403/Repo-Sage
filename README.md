@@ -126,6 +126,10 @@ cp .env.example .env
 
 ### 3. Running the Application
 
+Choose one of the two methods below to run the application.
+
+#### Option A: Running Locally (Standard Setup)
+
 **Backend Server (FastAPI)**
 ```bash
 cd backend
@@ -140,6 +144,34 @@ streamlit run app.py
 ```
 
 Navigate to `http://localhost:8501` in your browser.
+
+#### Option B: Running via Docker Compose (Containerized Setup)
+
+Docker Compose allows you to run both the frontend and backend in containerized environments.
+
+1. **Configure Environment Variables**:
+   Ensure you have copied `.env.example` to `.env`. Set the `OLLAMA_BASE_URL` to point to the host machine's Ollama instance:
+   * **Windows/macOS:**
+     ```env
+     OLLAMA_BASE_URL=http://host.docker.internal:11434
+     ```
+   * **Linux:** Point to your Docker bridge IP (typically `http://172.17.0.1:11434`).
+
+   > [!IMPORTANT]
+   > You must configure Ollama on your host to accept external connections from Docker by setting the environment variable `OLLAMA_HOST=0.0.0.0` on your host system and restarting the Ollama application completely.
+
+2. **Build and Start the Containers**:
+   Execute the following command in the project root directory:
+   ```bash
+   docker compose up --build
+   ```
+   *(Run with `-d` to launch in the background: `docker compose up -d --build`)*
+
+3. **Access the Application**:
+   * **Frontend Web UI:** Go to `http://localhost:8501`
+   * **Backend API Docs:** Go to `http://localhost:8000/docs`
+   * **Backend Health Check:** Verify the connection to Ollama by visiting `http://localhost:8000/health`
+
 
 ### 4. Enabling Local Real-Time Synchronization (Optional)
 
