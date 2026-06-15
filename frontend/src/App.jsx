@@ -2,16 +2,48 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Terminal, Search, Box, Shield, Network, BrainCircuit, Play, 
-  Rocket, Trash2, Github, Send, FileText, Activity 
+  Rocket, Trash2, Send, FileText, Activity, Sparkles, Bot
 } from 'lucide-react';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
+
+// Custom lightweight markdown renderer to handle rich output without registry dependency risk
+function renderMarkdown(text) {
+  if (!text) return '';
+  let html = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  // Code blocks: ```lang ... ```
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
+    return `<pre class="bg-slate-955/80 p-4 rounded-xl my-3 border border-indigo-500/10 overflow-x-auto font-mono text-sm text-slate-300"><code class="language-${lang}">${code.trim()}</code></pre>`;
+  });
+
+  // Inline code: `code`
+  html = html.replace(/`([^`\n]+)`/g, '<code class="bg-indigo-500/10 px-1.5 py-0.5 rounded text-indigo-300 font-mono text-xs border border-indigo-500/20">$1</code>');
+
+  // Bold: **text**
+  html = html.replace(/\*\*([^\*]+)\*\*/g, '<strong class="font-bold text-white">$1</strong>');
+
+  // Headers: ### text, ## text, # text
+  html = html.replace(/^### (.*$)/gim, '<h4 class="text-md font-bold text-indigo-300 mt-4 mb-2">$1</h4>');
+  html = html.replace(/^## (.*$)/gim, '<h3 class="text-lg font-bold text-indigo-200 mt-5 mb-2">$1</h3>');
+  html = html.replace(/^# (.*$)/gim, '<h2 class="text-xl font-bold text-white mt-6 mb-3">$1</h2>');
+
+  // Bullet points
+  html = html.replace(/^\s*-\s+(.*$)/gim, '<li class="ml-4 list-disc text-slate-300">$1</li>');
+
+  // Line breaks
+  html = html.replace(/\n/g, '<br/>');
+
+  return html;
+}
 
 function App() {
   const [repos, setRepos] = useState([]);
   const [currentRepo, setCurrentRepo] = useState(null);
   const [messages, setMessages] = useState([]);
-  const [sources, setSources] = useState([]);
   
   // Indexing State
   const [indexUrl, setIndexUrl] = useState('');
@@ -63,7 +95,6 @@ function App() {
   const selectRepo = (name) => {
     setCurrentRepo(name);
     setMessages([]);
-    setSources([]);
   };
 
   const handleDelete = async (name) => {
@@ -135,7 +166,7 @@ function App() {
               />
               <button 
                 type="submit" disabled={isIndexing}
-                className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 text-white font-medium rounded-lg px-4 py-2 text-sm shadow-lg shadow-indigo-500/20 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
+                className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 text-white font-medium rounded-lg px-4 py-2 text-sm shadow-lg shadow-indigo-500/25 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {isIndexing ? <Activity size={16} className="animate-spin" /> : <Rocket size={16} />}
                 {isIndexing ? 'Indexing...' : 'Index Repository'}
@@ -161,8 +192,6 @@ function App() {
               repo={currentRepo} 
               messages={messages} 
               setMessages={setMessages} 
-              sources={sources} 
-              setSources={setSources} 
             />
           )}
         </AnimatePresence>
@@ -245,14 +274,16 @@ function FeatureCard({ icon, title, desc, color, bg }) {
 // ════════════════════════════════════════════════════════════════════════════
 // Chat Interface Component
 // ════════════════════════════════════════════════════════════════════════════
-function ChatInterface({ repo, messages, setMessages, sources, setSources }) {
+function ChatInterface({ repo, messages, setMessages }) {
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [agentMode, setAgentMode] = useState(false);
+  const [agentStatusText, setAgentStatusText] = useState('');
   const bottomRef = useRef(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isTyping]);
+  }, [messages, isTyping, agentStatusText]);
 
   const handleSend = async (e) => {
     e?.preventDefault();
@@ -262,29 +293,148 @@ function ChatInterface({ repo, messages, setMessages, sources, setSources }) {
     setInput('');
     setMessages(prev => [...prev, { role: 'user', content: userMsg }]);
     setIsTyping(true);
-    setSources([]);
 
-    try {
-      const res = await fetch(`${BACKEND_URL}/query`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          repo_name: repo,
-          question: userMsg,
-          k: 6,
-          chat_history: messages.slice(-6)
-        })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setMessages(prev => [...prev, { role: 'assistant', content: data.answer }]);
-        setSources(data.sources || []);
-      } else {
-        setMessages(prev => [...prev, { role: 'assistant', content: `❌ Error: ${data.detail}` }]);
+    if (agentMode) {
+      // ─── Agent Mode (Non-streaming, LangGraph Agent) ───
+      setAgentStatusText('Analyzing repository structure...');
+      setMessages(prev => [...prev, { role: 'assistant', content: '', sources: [] }]);
+      
+      try {
+        const res = await fetch(`${BACKEND_URL}/query`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            repo_name: repo,
+            question: userMsg,
+            k: 6,
+            chat_history: messages.slice(-6)
+          })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          setMessages(prev => {
+            const updated = [...prev];
+            updated[updated.length - 1] = { 
+              role: 'assistant', 
+              content: data.answer, 
+              sources: data.sources || [] 
+            };
+            return updated;
+          });
+        } else {
+          setMessages(prev => {
+            const updated = [...prev];
+            updated[updated.length - 1] = { 
+              role: 'assistant', 
+              content: `❌ Error: ${data.detail || 'Failed to query codebase.'}` 
+            };
+            return updated;
+          });
+        }
+      } catch (e) {
+        setMessages(prev => {
+          const updated = [...prev];
+          updated[updated.length - 1] = { 
+            role: 'assistant', 
+            content: `❌ Request failed: ${e.message}` 
+          };
+          return updated;
+        });
       }
-    } catch (e) {
-      setMessages(prev => [...prev, { role: 'assistant', content: `❌ Request failed: ${e.message}` }]);
+      setAgentStatusText('');
+    } else {
+      // ─── Fast RAG Mode (Streaming, SSE) ───
+      setMessages(prev => [...prev, { role: 'assistant', content: '', sources: [] }]);
+
+      try {
+        const response = await fetch(`${BACKEND_URL}/query/stream`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            repo_name: repo,
+            question: userMsg,
+            k: 6,
+            chat_history: messages.slice(-6)
+          })
+        });
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          setMessages(prev => {
+            const updated = [...prev];
+            updated[updated.length - 1] = { 
+              role: 'assistant', 
+              content: `❌ Error: ${errData.detail || 'Failed to stream response'}` 
+            };
+            return updated;
+          });
+          setIsTyping(false);
+          return;
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            const cleanedLine = line.trim();
+            if (!cleanedLine.startsWith('data: ')) continue;
+            
+            try {
+              const data = JSON.parse(cleanedLine.substring(6));
+              if (data.type === 'token') {
+                setMessages(prev => {
+                  const updated = [...prev];
+                  const lastMsg = updated[updated.length - 1];
+                  if (lastMsg && lastMsg.role === 'assistant') {
+                    lastMsg.content += data.content;
+                  }
+                  return updated;
+                });
+              } else if (data.type === 'sources') {
+                setMessages(prev => {
+                  const updated = [...prev];
+                  const lastMsg = updated[updated.length - 1];
+                  if (lastMsg && lastMsg.role === 'assistant') {
+                    lastMsg.sources = data.sources || [];
+                  }
+                  return updated;
+                });
+              } else if (data.type === 'error') {
+                setMessages(prev => {
+                  const updated = [...prev];
+                  const lastMsg = updated[updated.length - 1];
+                  if (lastMsg && lastMsg.role === 'assistant') {
+                    lastMsg.content = `❌ Error: ${data.content}`;
+                  }
+                  return updated;
+                });
+              }
+            } catch (err) {
+              console.error('Error parsing SSE line:', err);
+            }
+          }
+        }
+      } catch (e) {
+        setMessages(prev => {
+          const updated = [...prev];
+          updated[updated.length - 1] = { 
+            role: 'assistant', 
+            content: `❌ Request failed: ${e.message}` 
+          };
+          return updated;
+        });
+      }
     }
+    
     setIsTyping(false);
   };
 
@@ -292,22 +442,37 @@ function ChatInterface({ repo, messages, setMessages, sources, setSources }) {
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col h-full w-full max-w-4xl mx-auto">
       
       {/* Header */}
-      <div className="shrink-0 p-6 border-b border-slate-800/50 bg-background/50 backdrop-blur-md sticky top-0 z-10">
+      <div className="shrink-0 p-6 border-b border-slate-800/50 bg-background/50 backdrop-blur-md sticky top-0 z-10 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-indigo-500/10 rounded-lg text-indigo-400"><Box size={20} /></div>
           <div>
             <h2 className="text-xl font-bold">{repo}</h2>
-            <p className="text-xs text-slate-400">Ask questions about this codebase</p>
+            <p className="text-xs text-slate-400 font-medium">Ask questions about this codebase</p>
           </div>
+        </div>
+
+        {/* Mode Selector Toggle */}
+        <div className="flex items-center gap-3 bg-slate-900/40 border border-slate-700/30 px-3 py-1.5 rounded-xl shadow-inner">
+          <div className="flex items-center gap-1">
+            {agentMode ? <Sparkles size={13} className="text-indigo-400 animate-pulse" /> : <Bot size={13} className="text-slate-400" />}
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Agentic Reasoning</span>
+          </div>
+          <button 
+            type="button"
+            onClick={() => setAgentMode(!agentMode)}
+            className={`w-9 h-5 rounded-full transition-all duration-300 relative ${agentMode ? 'bg-gradient-to-r from-indigo-500 to-purple-600' : 'bg-slate-800'}`}
+          >
+            <div className={`w-3.5 h-3.5 bg-white rounded-full absolute top-[3px] transition-all duration-300 shadow-sm ${agentMode ? 'left-[17px]' : 'left-[3px]'}`}></div>
+          </button>
         </div>
       </div>
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-hide">
         {messages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center opacity-50">
-            <Search size={48} className="mb-4 text-slate-600" />
-            <p className="text-slate-400">What would you like to know about {repo}?</p>
+          <div className="h-full flex flex-col items-center justify-center opacity-40">
+            <Search size={48} className="mb-4 text-slate-600 animate-pulse" />
+            <p className="text-slate-400 text-sm">What would you like to know about {repo}?</p>
           </div>
         ) : (
           messages.map((m, i) => (
@@ -315,9 +480,32 @@ function ChatInterface({ repo, messages, setMessages, sources, setSources }) {
               initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} 
               key={i} className={`flex gap-4 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
-              {m.role === 'assistant' && <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shrink-0 mt-1"><BrainCircuit size={16} className="text-white"/></div>}
+              {m.role === 'assistant' && (
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shrink-0 mt-1 shadow-md shadow-indigo-500/10">
+                  <BrainCircuit size={16} className="text-white"/>
+                </div>
+              )}
               <div className={`px-5 py-3.5 rounded-2xl max-w-[85%] text-[0.92rem] leading-relaxed shadow-sm ${m.role === 'user' ? 'bg-indigo-500 text-white rounded-tr-sm' : 'glass-card rounded-tl-sm text-slate-300'}`}>
-                <div dangerouslySetInnerHTML={{ __html: m.content.replace(/\n/g, '<br/>') }} />
+                <div 
+                  className="prose prose-invert max-w-none text-slate-300"
+                  dangerouslySetInnerHTML={{ __html: renderMarkdown(m.content) }} 
+                />
+                
+                {/* Inline sources rendering per-message */}
+                {m.sources && m.sources.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-slate-700/30">
+                    <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-1">
+                      <FileText size={11}/> Source Chunks
+                    </h4>
+                    <div className="flex flex-wrap gap-1.5">
+                      {m.sources.map((src, idx) => (
+                        <span key={idx} className="text-[10px] px-2 py-0.5 bg-indigo-500/5 hover:bg-indigo-500/15 border border-indigo-500/10 hover:border-indigo-500/25 text-indigo-400 hover:text-indigo-300 rounded-md font-mono flex items-center gap-1 cursor-default transition-all">
+                          <FileText size={9} className="opacity-50" /> {src}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </motion.div>
           ))
@@ -325,25 +513,20 @@ function ChatInterface({ repo, messages, setMessages, sources, setSources }) {
         
         {isTyping && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex gap-4">
-            <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center shrink-0 animate-pulse"><BrainCircuit size={16} className="text-slate-500"/></div>
-            <div className="px-5 py-4 glass-card rounded-2xl rounded-tl-sm flex items-center gap-2">
-              <div className="w-2 h-2 bg-indigo-500 rounded-full animate-bounce"></div>
-              <div className="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style={{animationDelay:'0.2s'}}></div>
-              <div className="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style={{animationDelay:'0.4s'}}></div>
+            <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700/50 flex items-center justify-center shrink-0 animate-pulse">
+              <BrainCircuit size={16} className="text-slate-500"/>
             </div>
-          </motion.div>
-        )}
-
-        {/* Sources display for the last message */}
-        {sources.length > 0 && !isTyping && (
-          <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} className="ml-12 pl-4 border-l-2 border-indigo-500/30">
-            <h4 className="text-xs font-bold text-slate-500 uppercase mb-2 flex items-center gap-1"><FileText size={12}/> Sources</h4>
-            <div className="flex flex-wrap gap-2">
-              {sources.map((src, i) => (
-                <span key={i} className="text-[0.7rem] px-2.5 py-1 bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 rounded-full font-mono flex items-center gap-1.5 cursor-default hover:bg-indigo-500/20 transition-colors">
-                  <FileText size={10} className="opacity-50" /> {src}
+            <div className="px-5 py-4 glass-card rounded-2xl rounded-tl-sm flex flex-col gap-2">
+              {agentStatusText && (
+                <span className="text-xs text-slate-400 italic mb-1 flex items-center gap-1.5 animate-pulse">
+                  <Sparkles size={11} className="text-indigo-400" /> {agentStatusText}
                 </span>
-              ))}
+              )}
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-indigo-500 rounded-full animate-bounce"></div>
+                <div className="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style={{animationDelay:'0.2s'}}></div>
+                <div className="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style={{animationDelay:'0.4s'}}></div>
+              </div>
             </div>
           </motion.div>
         )}
@@ -356,13 +539,13 @@ function ChatInterface({ repo, messages, setMessages, sources, setSources }) {
           <input 
             type="text" 
             value={input} onChange={e => setInput(e.target.value)}
-            placeholder={`Ask about ${repo}...`}
-            className="w-full bg-surface/50 border border-slate-700 rounded-2xl pl-5 pr-14 py-4 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all shadow-xl"
+            placeholder={agentMode ? `Perform deep codebase query...` : `Ask about ${repo}...`}
+            className="w-full bg-surface/50 border border-slate-700 rounded-2xl pl-5 pr-14 py-4 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all shadow-xl text-slate-200 placeholder-slate-500"
             disabled={isTyping}
           />
           <button 
             type="submit" disabled={!input.trim() || isTyping}
-            className="absolute right-2 top-1/2 -translate-y-1/2 p-2.5 bg-indigo-500 hover:bg-indigo-400 text-white rounded-xl transition-all disabled:opacity-50 disabled:hover:bg-indigo-500 disabled:cursor-not-allowed"
+            className="absolute right-2 top-1/2 -translate-y-1/2 p-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 text-white rounded-xl transition-all disabled:opacity-50 disabled:hover:from-indigo-500 disabled:cursor-not-allowed shadow-md"
           >
             <Send size={18} />
           </button>

@@ -309,12 +309,21 @@ def list_repositories():
 
 
 @app.get("/repos/{repo_name}/summary", tags=["Repositories"])
-def get_repo_summary(repo_name: str):
+def get_repo_summary(repo_name: str, refresh: bool = False):
     """Get a high-level summary of an indexed repository.
 
     Returns tech stack, architecture overview, key modules,
     and entry points.
     """
+    if refresh:
+        cache_path = os.path.join(CHROMA_PERSIST_DIR, repo_name, "summary_cache.json")
+        if os.path.exists(cache_path):
+            try:
+                os.remove(cache_path)
+                logger.info(f"Deleted cached summary for {repo_name} to force reload.")
+            except Exception as e:
+                logger.error(f"Failed to delete cached summary: {e}")
+
     result = summarizer.summarize(repo_name)
     if "Could not load" in result["summary"]:
         raise HTTPException(status_code=404, detail=result["summary"])

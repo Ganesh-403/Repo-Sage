@@ -102,6 +102,18 @@ class RepoSummarizer:
                 "metadata": {},
             }
 
+        # Load from cache if it exists
+        cache_path = os.path.join(collection_dir, "summary_cache.json")
+        if os.path.exists(cache_path):
+            try:
+                import json
+                with open(cache_path, "r", encoding="utf-8") as f:
+                    cached_data = json.load(f)
+                logger.info(f"Loaded cached summary for {repo_name}")
+                return cached_data
+            except Exception as e:
+                logger.warning(f"Failed to load cached summary for {repo_name}: {e}")
+
         try:
             vectorstore = Chroma(
                 persist_directory=collection_dir,
@@ -165,7 +177,7 @@ class RepoSummarizer:
 
         total_chunks = vectorstore._collection.count()
 
-        return {
+        result = {
             "summary": summary,
             "metadata": {
                 "repo": repo_name,
@@ -174,3 +186,14 @@ class RepoSummarizer:
                 "files_sampled": len(files),
             },
         }
+
+        # Save to cache
+        try:
+            import json
+            with open(cache_path, "w", encoding="utf-8") as f:
+                json.dump(result, f, indent=2)
+            logger.info(f"Cached summary for {repo_name} at {cache_path}")
+        except Exception as e:
+            logger.error(f"Failed to save summary cache for {repo_name}: {e}")
+
+        return result

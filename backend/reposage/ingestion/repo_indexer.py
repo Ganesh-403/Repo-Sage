@@ -146,63 +146,66 @@ class RepoIndexer:
         files_processed = 0
         files_skipped = 0
 
-        for file_path in Path(tmp_path).rglob("*"):
-            # Skip directories
-            if not file_path.is_file():
-                continue
+        for root, dirs, files in os.walk(tmp_path):
+            # Prune directories in SKIP_DIRS in-place to avoid scanning them
+            dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
+            
+            for file in files:
+                file_path = Path(root) / file
 
-            # Skip known junk directories
-            if any(skip in file_path.parts for skip in SKIP_DIRS):
-                files_skipped += 1
-                continue
+                # Skip by suffix
+                if any(file.endswith(s) for s in SKIP_SUFFIXES):
+                    files_skipped += 1
+                    continue
 
-            # Skip by suffix
-            if any(file_path.name.endswith(s) for s in SKIP_SUFFIXES):
-                files_skipped += 1
-                continue
+                try:
+                    file_size = file_path.stat().st_size
+                except Exception:
+                    files_skipped += 1
+                    continue
 
-            # Skip files that are too large (likely generated/vendored)
-            if file_path.stat().st_size > MAX_FILE_SIZE:
-                files_skipped += 1
-                continue
+                # Skip files that are too large (likely generated/vendored)
+                if file_size > MAX_FILE_SIZE:
+                    files_skipped += 1
+                    continue
 
-            # Skip non-code files
-            ext = file_path.suffix.lower()
-            if ext not in CODE_EXTENSIONS:
-                files_skipped += 1
-                continue
+                # Skip non-code files
+                ext = file_path.suffix.lower()
+                if ext not in CODE_EXTENSIONS:
+                    files_skipped += 1
+                    continue
 
-            # Route to the appropriate chunker
-            chunker = CHUNKERS.get(ext, GENERIC)
+                # Route to the appropriate chunker
+                chunker = CHUNKERS.get(ext, GENERIC)
 
-            try:
-                raw_chunks = chunker.chunk_file(str(file_path))
-                
-                # Bypassing slow Contextual Retrieval for rapid indexing
-                relative_path = str(file_path.relative_to(tmp_path)).replace("\\", "/")
+                try:
+                    raw_chunks = chunker.chunk_file(str(file_path))
                     
-            except Exception as e:
-                logger.warning(f"Failed to chunk {file_path}: {e}")
-                files_skipped += 1
-                continue
+                    # Bypassing slow Contextual Retrieval for rapid indexing
+                    relative_path = str(file_path.relative_to(tmp_path)).replace("\\", "/")
+                        
+                except Exception as e:
+                    logger.warning(f"Failed to chunk {file_path}: {e}")
+                    files_skipped += 1
+                    continue
 
-            # Convert to LangChain Documents with rich metadata
-            for chunk in raw_chunks:
-                all_chunks.append(Document(
-                    page_content=chunk.content,
-                    metadata={
-                        "repo":       repo_name,
-                        "file":       relative_path,
-                        "type":       chunk.chunk_type,
-                        "name":       chunk.name,
-                        "line_start": chunk.line_start,
-                        "line_end":   chunk.line_end,
-                        "language":   chunk.language,
-                        "calls":      getattr(chunk, "calls", []),
-                    }
-                ))
+                # Convert to LangChain Documents with rich metadata
+                for chunk in raw_chunks:
+                    all_chunks.append(Document(
+                        page_content=chunk.content,
+                        metadata={
+                            "repo":       repo_name,
+                            "file":       relative_path,
+                            "type":       chunk.chunk_type,
+                            "name":       chunk.name,
+                            "line_start": chunk.line_start,
+                            "line_end":   chunk.line_end,
+                            "language":   chunk.language,
+                            "calls":      getattr(chunk, "calls", []),
+                        }
+                    ))
 
-            files_processed += 1
+                files_processed += 1
 
         if not all_chunks:
             raise ValueError(f"No code files found in {github_url}")
