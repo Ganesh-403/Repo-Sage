@@ -15,6 +15,10 @@ import os
 import json
 import logging
 from contextlib import asynccontextmanager
+from dotenv import load_dotenv
+
+# Load environment variables from .env if present
+load_dotenv()
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -84,7 +88,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS — allow Streamlit frontend
+# CORS — allow React/Vite frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # In production, restrict to your frontend domain

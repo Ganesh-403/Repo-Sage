@@ -45,8 +45,8 @@ class QueryTransformer:
     of how the same concept might appear in code.
 
     Args:
-        openai_api_key: Optional API key (falls back to env var).
-        model: OpenAI model for query generation (default: gpt-4o-mini).
+        ollama_base_url: Base URL for local Ollama service.
+        model: Local Ollama model name for query generation.
     """
 
     def __init__(

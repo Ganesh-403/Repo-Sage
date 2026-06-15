@@ -6,7 +6,7 @@ Handles the full query pipeline:
 2. Retrieve relevant code chunks from ChromaDB (vector similarity)
 3. Format chunks with file:line attribution
 4. Construct code-aware prompts (system + user)
-5. Stream response from GPT-4o-mini
+5. Stream response from local Ollama model
 6. Return answer with source citations
 
 The system prompt instructs the LLM to always cite file paths and line
@@ -70,12 +70,14 @@ class CodeRAGEngine:
     """RAG query engine for code-aware question answering.
 
     Retrieves relevant code chunks from ChromaDB and generates
-    answers with file:line citations using GPT-4o-mini.
+    answers with file:line citations using a local Ollama model.
 
     Args:
         repo_name: Name of the indexed repository.
         persist_dir: ChromaDB persistence directory.
-        openai_api_key: Optional API key (falls back to env var).
+        ollama_base_url: Base URL for local Ollama service.
+        ollama_model: Local Ollama model name.
+        ollama_embed_model: Local Ollama embedding model name.
     """
 
     def __init__(

@@ -3,7 +3,7 @@ Docstring Generator — Auto-generate summaries for undocumented functions.
 
 Functions without docstrings are harder to retrieve via semantic search
 because the embedding model has no natural language description to match
-against. This module uses GPT-4o-mini to generate concise 1-sentence
+against. This module uses a local Ollama model to generate concise 1-sentence
 summaries that are prepended to the chunk content before embedding.
 
 This bridges the gap between how developers ask questions ("validate user
@@ -49,8 +49,8 @@ class DocstringGenerator:
     code and a natural language description.
 
     Args:
-        openai_api_key: Optional API key (falls back to env var).
-        model: OpenAI model to use (default: gpt-4o-mini).
+        ollama_base_url: Base URL for local Ollama service.
+        model: Local Ollama model name to use.
         max_code_chars: Maximum code length to send for summarization.
     """
 

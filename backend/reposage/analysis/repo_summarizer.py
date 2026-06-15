@@ -58,8 +58,10 @@ class RepoSummarizer:
     key modules.
 
     Args:
-        openai_api_key: Optional API key (falls back to env var).
         persist_dir: ChromaDB persistence directory.
+        ollama_base_url: Base URL for local Ollama service.
+        ollama_model: Local Ollama model name.
+        ollama_embed_model: Local Ollama embedding model name.
     """
 
     def __init__(

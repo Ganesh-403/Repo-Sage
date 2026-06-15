@@ -3,6 +3,10 @@ import os
 import requests
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+from dotenv import load_dotenv
+
+# Load environment variables if present
+load_dotenv()
 
 class RepoSyncHandler(FileSystemEventHandler):
     def __init__(self, api_url: str, local_repo_path: str):
