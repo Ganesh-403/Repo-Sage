@@ -1,8 +1,10 @@
 # RepoSage — Enterprise-Grade Codebase Intelligence System
 
-RepoSage is a 100% offline, Agentic GraphRAG system designed for developers and engineering teams. By supplying a GitHub repository URL or a local directory path, users can query their codebase in natural language. The system autonomously retrieves context, traverses functional dependencies, and generates precise answers complete with exact file paths and line numbers.
+RepoSage is a 100% offline, Agentic GraphRAG system designed for developers and engineering teams. By supplying a local directory path or a GitHub repository URL, users can query their codebase in natural language. The system autonomously retrieves context, traverses functional dependencies, and generates precise answers complete with exact file paths and line numbers.
 
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://python.org)
+[![React](https://img.shields.io/badge/React-18.3-61dafb.svg)](https://react.dev)
+[![Vite](https://img.shields.io/badge/Vite-5.2-646cff.svg)](https://vitejs.dev)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688.svg)](https://fastapi.tiangolo.com)
 [![LangGraph](https://img.shields.io/badge/LangGraph-0.2-red.svg)](https://langchain.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
@@ -16,20 +18,24 @@ Traditional Retrieval-Augmented Generation (RAG) systems fail on complex codebas
 1. **Abstract Syntax Tree (AST) Chunking**: Code is parsed logically into atomic structural units (functions, classes) rather than arbitrary text chunks.
 2. **Knowledge Graphs (GraphRAG)**: Function-call dependencies are mapped at ingestion time. During retrieval, the engine dynamically injects caller and callee contexts, virtually eliminating missing-dependency hallucinations.
 3. **Autonomous Agentic Workflows**: Powered by LangGraph, the query engine operates autonomously, utilizing tools to execute semantic searches and proactively read specific files if further context is required.
+4. **Real-time SSE Streaming**: Employs Server-Sent Events (SSE) to stream answers token-by-token directly to a modern, animated React frontend.
 
-RepoSage operates entirely locally. It utilizes Ollama running the `qwen2.5-coder:7b` model, guaranteeing absolute privacy for proprietary codebases.
+RepoSage operates entirely locally. It utilizes Ollama running reasoning models (such as `qwen3:4b` or `qwen2.5-coder:7b`), guaranteeing absolute privacy for proprietary codebases.
 
 ---
 
 ## Core Capabilities
 
-- **Autonomous Agent**: Leverages LangGraph to actively investigate queries through iterative tool execution (`semantic_search` and `read_file`).
-- **GraphRAG Architecture**: Uses `networkx` to build and traverse a directed graph of function calls across the codebase.
-- **Real-Time Synchronization**: Monitors local directories using a `watchdog` daemon, seamlessly re-indexing files in the background upon modification.
-- **Hybrid Search via RRF**: Combines dense vector retrieval (ChromaDB) with lexical keyword matching (BM25) using Reciprocal Rank Fusion to maximize recall.
+- **State-of-the-Art Animated Frontend**: Rebuilt on React, Vite, Tailwind CSS, and Framer Motion with spring-physics charts, a technical mock terminal, and a collapsible dashboard sidebar.
+- **Double Mode Query Engine**:
+  - **Standard RAG Mode (SSE Streaming)**: Connects to `/query/stream` for near-instant, streamed token replies, complete with inline source tags.
+  - **Agent Mode**: Leverages LangGraph to actively investigate complex codebase queries through iterative tool execution (`semantic_search` and `read_file`).
+- **Parallelized Hybrid Search**: Executes dense vector retrieval (ChromaDB) and lexical keyword matching (BM25) in parallel using a python `ThreadPoolExecutor`, reducing I/O latency to <1s.
+- **Fast Ingestion Traversal Walk**: Replaced file globbing with `os.walk` directory pruning to bypass skipped directories (`.git`, `node_modules`, `.venv`, etc.) in-place, dramatically speeding up repository indexing.
 - **Contextual Retrieval (Anthropic Pattern)**: Auto-generates file-level summaries and prepends them to individual chunks, preserving macro-level context within micro-level retrievals.
-- **Multi-Language Support**: AST parsing for Python, Regular Expression heuristics for JavaScript/TypeScript, and line-based fallback for all other languages.
-- **Precision Citations**: Every generated response includes verifiable source locations formatted as `filename:line_number`.
+- **Cache-Accelerated Summaries**: Caches high-level repository summaries (`summary_cache.json`) to skip LLM analysis runs on subsequent dashboard loads.
+- **Precision Citation Badges**: Verifiable source locations formatted as interactive badges indicating `filename:line_number` in the chat window.
+- **Query Expansion Toggle**: Set `ENABLE_QUERY_EXPANSION=false` to skip reasoning model query expansion, speeding up query execution for local setups.
 
 ---
 
@@ -49,36 +55,37 @@ graph TD
     G --> H[(ChromaDB Vector Store)]
 ```
 
+1. **Source Resolution**: Accepts public GitHub URLs (cloned via GitPython) or local folders.
+2. **Pruned Ingestion traversal**: `os.walk` traverses files while ignoring excluded directories (`node_modules`, `.git`, `.venv`) before scanning, optimizing disk operations.
+3. **Language-Aware Parsing**: Files are parsed to extract structural units. Python uses `ast`; JavaScript/TypeScript uses regex patterns.
+4. **Graph Construction**: Constructs a NetworkX directed graph of function declarations and calls (`ast.Call`).
+5. **Context Injection & Vector Persistence**: Computes file summaries and appends them to individual chunks, which are then embedded and saved in ChromaDB alongside the call graph.
 
-1. **Source Resolution**: The system accepts public GitHub URLs (cloning via GitPython) or local file URIs (`local:///...`).
-2. **Language-Aware Parsing**: Files are routed to specific chunkers. Python utilizes the native `ast` module; JS/TS utilizes regex patterns.
-3. **Graph Construction**: The parser identifies function declarations and invocation calls (`ast.Call`), constructing a NetworkX directed graph.
-4. **Context Injection**: An LLM generates a comprehensive summary for each file. This summary is injected into every child chunk.
-5. **Embedding & Persistence**: Chunks are embedded using `nomic-embed-text` and persisted in a local ChromaDB collection alongside the serialized graph.
-
-### Phase 2: Agentic Query Pipeline
+### Phase 2: Query Pipeline (Dual Engine)
 
 ```mermaid
 graph TD
-    Q[User Query] --> A{LangGraph Autonomous Agent}
-    A -->|Investigates| B[Tool: semantic_search]
-    B --> C{Hybrid Search}
-    C -->|Lexical| D[BM25 Index]
-    C -->|Semantic| E[(ChromaDB)]
-    C --> F[Reciprocal Rank Fusion]
-    F --> G[Graph Traversal <br/> Fetch Callers/Callees]
-    G --> A
-    A -->|Missing Context?| H[Tool: read_file]
-    H -->|Read Full Source| A
-    A -->|Synthesis Complete| I[Final Answer <br/> with Exact Citations]
+    Q[User Query] --> M{Mode Select}
+    M -->|Standard RAG| S[SSE Stream /query/stream]
+    M -->|Agent Mode| A[LangGraph Agent /query]
+    
+    S --> H[Parallel Hybrid Search]
+    A --> T[Agent Tool: semantic_search]
+    T --> H
+    
+    H --> P[Parallel Vector & BM25 Search]
+    P --> RRF[Reciprocal Rank Fusion]
+    RRF --> G[Graph Traversal: Fetch Callers/Callees]
+    G --> R[Response Generation]
+    
+    A -->|Refines Context| RF[Agent Tool: read_file]
+    RF --> A
 ```
 
-
-1. **Tool-Equipped Agent**: The user query is passed to a LangGraph workflow controlling the `qwen2.5-coder:7b` model.
-2. **Semantic Search**: The agent invokes the `semantic_search` tool, which triggers a Hybrid Search (Vector + BM25).
-3. **Graph Traversal**: The RAG engine detects matched functions and traverses the Knowledge Graph to append related callers and callees to the context window.
-4. **Iterative Investigation**: If the retrieved context is insufficient, the agent may invoke the `read_file` tool to inspect full file contents.
-5. **Synthesis**: The agent formulates the final response, synthesizing the gathered context and citing source locations.
+1. **Streaming SSE (Standard RAG)**: Sends query directly to `/query/stream`, which retrieves context, runs graph traversal, and streams tokens to the client immediately.
+2. **Agentic Inference (Agent Mode)**: The LangGraph workflow controls Ollama, running semantic searches and iteratively invoking `read_file` tools to investigate code files.
+3. **Parallel Retrieval**: BM25 and ChromaDB lookups execute in parallel on separate threads, merged through Reciprocal Rank Fusion (RRF) to keep total search time under 1s.
+4. **Source citations**: Inline citation sources are delivered and rendered in real time on the UI.
 
 ---
 
@@ -86,100 +93,100 @@ graph TD
 
 ### Prerequisites
 
-- Python 3.11 or higher
-- [Ollama](https://ollama.com/) installed and running locally
-- Git
+- **Python 3.11** or higher
+- **Node.js 18** or higher (for the frontend)
+- **Ollama** running locally
+- **Git**
 
-### 1. Repository Setup
+### 1. Model Configuration
 
-Clone the repository and configure the virtual environment:
-
-```bash
-git clone https://github.com/yourname/reposage.git
-cd reposage
-
-python -m venv .venv
-# Linux/macOS
-source .venv/bin/activate  
-# Windows
-.venv\Scripts\activate
-
-pip install -r backend/requirements.txt
-pip install streamlit requests
-```
-
-### 2. Model Configuration
-
-Pull the necessary models via Ollama. By default, RepoSage utilizes Qwen2.5 for inference and Nomic for embeddings.
+Pull the necessary models via Ollama. By default, RepoSage utilizes `qwen3:4b` or `qwen2.5-coder:7b` for inference, and `nomic-embed-text` for embeddings.
 
 ```bash
-ollama pull qwen2.5-coder:7b
+ollama pull qwen3:4b
 ollama pull nomic-embed-text
 ```
+
+### 2. Environment Setup
 
 Copy the environment template:
 
 ```bash
 cp .env.example .env
 ```
-*(Optional: Edit `.env` to supply a GitHub Personal Access Token for indexing private repositories).*
 
-### 3. Running the Application
+Review and adjust variables:
+```env
+# Required: Ollama base url
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=qwen3:4b
+OLLAMA_EMBED_MODEL=nomic-embed-text
 
-Choose one of the two methods below to run the application.
+# Optional: Disable query expansion to speed up local queries
+ENABLE_QUERY_EXPANSION=false
 
-#### Option A: Running Locally (Standard Setup)
+# Optional: Chroma persist directory
+CHROMA_PERSIST_DIR=./chroma_db
+```
 
-**Backend Server (FastAPI)**
+---
+
+## Running the Application
+
+### Option A: Running Locally (Standard Setup)
+
+#### 1. Backend Server (FastAPI)
+Configure virtual environment and start FastAPI on port `8000`:
 ```bash
 cd backend
-uvicorn main:app --reload --port 8000
+python -m venv .venv
+
+# Activate environment:
+# Linux/macOS:
+source .venv/bin/activate
+# Windows:
+.venv\Scripts\activate
+
+pip install -r requirements.txt
+python main.py
 ```
 
-**Frontend Client (Streamlit)**
-Open a separate terminal instance and start the user interface:
+#### 2. Frontend Client (React + Vite)
+In a new terminal window, install dependencies and start the Vite dev server on port `5173`:
 ```bash
 cd frontend
-streamlit run app.py
+npm install
+npm run dev
 ```
 
-Navigate to `http://localhost:8501` in your browser.
+Navigate to **[http://localhost:5173](http://localhost:5173)** in your browser.
 
-#### Option B: Running via Docker Compose (Containerized Setup)
+---
 
-Docker Compose allows you to run both the frontend and backend in containerized environments.
+### Option B: Running via Docker Compose
 
-1. **Configure Environment Variables**:
-   Ensure you have copied `.env.example` to `.env`. Set the `OLLAMA_BASE_URL` to point to the host machine's Ollama instance:
+Docker Compose runs the frontend and backend in isolated containers.
+
+1. **Set Environment Variables**:
+   In your `.env` file, point the backend container to your host machine's Ollama instance:
    * **Windows/macOS:**
      ```env
      OLLAMA_BASE_URL=http://host.docker.internal:11434
+     CHROMA_PERSIST_DIR=/app/chroma_db
      ```
-   * **Linux:** Point to your Docker bridge IP (typically `http://172.17.0.1:11434`).
+   * **Linux:** Point to your bridge IP (typically `http://172.17.0.1:11434`).
+   
+   *Make sure Ollama is allowed to receive external network requests by setting the host environment variable `OLLAMA_HOST=0.0.0.0` and restarting Ollama.*
 
-   > [!IMPORTANT]
-   > You must configure Ollama on your host to accept external connections from Docker by setting the environment variable `OLLAMA_HOST=0.0.0.0` on your host system and restarting the Ollama application completely.
-
-2. **Build and Start the Containers**:
-   Execute the following command in the project root directory:
+2. **Start the Containers**:
    ```bash
-   docker compose up --build
+   docker compose up -d --build
    ```
-   *(Run with `-d` to launch in the background: `docker compose up -d --build`)*
 
-3. **Access the Application**:
-   * **Frontend Web UI:** Go to `http://localhost:8501`
-   * **Backend API Docs:** Go to `http://localhost:8001/docs`
-   * **Backend Health Check:** Verify the connection to Ollama by visiting `http://localhost:8001/health`
-
-
-### 4. Enabling Local Real-Time Synchronization (Optional)
-
-To enable background monitoring and automatic re-indexing for local projects, execute the file watcher daemon:
-
-```bash
-python backend/reposage/ingestion/file_watcher.py "C:/absolute/path/to/your/project"
-```
+3. **Access Services**:
+   - **Frontend App**: `http://localhost:5173`
+   - **Backend API Docs**: `http://localhost:8001/docs` (Note the backend container is mapped to port `8001` on the host system)
+   - **Backend Health Check**: `http://localhost:8001/health`
 
 ---
 
@@ -188,37 +195,47 @@ python backend/reposage/ingestion/file_watcher.py "C:/absolute/path/to/your/proj
 ```text
 reposage/
 ├── backend/
-│   ├── main.py                    # FastAPI application entry point
+│   ├── main.py                     # FastAPI application entry point
 │   ├── reposage/
 │   │   ├── chunkers/
-│   │   │   ├── python_chunker.py  # AST parser and GraphRAG call extraction
-│   │   │   ├── js_chunker.py      # Regex JS/TS parser and extraction
-│   │   │   └── generic_chunker.py # Line-based fallback mechanism
+│   │   │   ├── python_chunker.py   # AST parser and Call Graph extraction
+│   │   │   ├── js_chunker.py       # Regex JS/TS parser
+│   │   │   └── generic_chunker.py  # Line-based fallback mechanism
 │   │   ├── ingestion/
-│   │   │   ├── repo_indexer.py    # Ingestion orchestration and ChromaDB integration
-│   │   │   ├── file_watcher.py    # Watchdog daemon for real-time synchronization
-│   │   │   └── docstring_gen.py   # Contextual retrieval summary generator
+│   │   │   ├── repo_indexer.py     # os.walk traversal ingestion & ChromaDB indexer
+│   │   │   ├── file_watcher.py     # Watchdog directory synchronization daemon
+│   │   │   └── docstring_gen.py    # Chunk context summary generator
 │   │   ├── query/
-│   │   │   ├── agent_engine.py    # LangGraph autonomous agent workflow
-│   │   │   ├── rag_engine.py      # Hybrid RRF search and graph traversal
-│   │   │   └── query_transformer.py # Query expansion logic
+│   │   │   ├── agent_engine.py     # LangGraph autonomous agent workflow
+│   │   │   ├── rag_engine.py       # Parallel Hybrid search and call graph traversal
+│   │   │   └── query_transformer.py # Single-flow query expander & bypass toggle
 │   │   └── analysis/
-│   │       └── repo_summarizer.py # Repository macro-analysis generator
-│   ├── requirements.txt
-│   └── tests/                     # Pytest suite
+│   │       └── repo_summarizer.py  # Cached repository macro-analysis generator
+│   └── requirements.txt
 ├── frontend/
-│   ├── app.py                     # Streamlit frontend application
-│   └── Dockerfile
-├── docker-compose.yml
-├── .env.example
-└── README.md
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── LandingPage.jsx     # Modern mock terminal & landing layout
+│   │   │   ├── RepoDashboard.jsx   # Collapsible dashboard sidebar & file listing
+│   │   │   └── ChatInterface.jsx   # Streaming SSE chat view & citation badge UI
+│   │   ├── utils/
+│   │   │   └── markdown.js         # Custom syntax-highlighting markdown parser
+│   │   ├── App.jsx                 # Routing shell and global states
+│   │   ├── index.css               # Tailwind & font styling rules
+│   │   └── main.jsx                # React mount entrypoint
+│   ├── package.json                # npm dependencies
+│   ├── vite.config.js              # Vite configuration (port 5173)
+│   └── Dockerfile                  # Lightweight Node.js build image
+├── docker-compose.yml              # Production container config (Frontend: 5173, Backend: 8001)
+├── .env.example                    # Template environment variables
+└── README.md                       # Product documentation
 ```
 
 ---
 
 ## Testing
 
-Execute the test suite from the root directory:
+Execute the backend pytest suite:
 
 ```bash
 python -m pytest backend/tests/ -v
