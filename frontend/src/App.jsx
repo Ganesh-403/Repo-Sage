@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Terminal, Search, Box, Shield, Network, BrainCircuit, Play, 
-  Rocket, Trash2, Send, FileText, Activity, Sparkles, Bot
+  Rocket, Trash2, Send, FileText, Activity, Sparkles, Bot,
+  Cpu, ChevronRight, ChevronLeft, RefreshCw, BarChart2, Layers
 } from 'lucide-react';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
@@ -17,19 +18,23 @@ function renderMarkdown(text) {
 
   // Code blocks: ```lang ... ```
   html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
-    return `<pre class="bg-slate-955/80 p-4 rounded-xl my-3 border border-indigo-500/10 overflow-x-auto font-mono text-sm text-slate-300"><code class="language-${lang}">${code.trim()}</code></pre>`;
+    return `<pre class="bg-slate-955/90 p-4 rounded-xl my-3 border border-indigo-500/10 overflow-x-auto font-mono text-xs text-slate-300"><code class="language-${lang}">${code.trim()}</code></pre>`;
   });
 
   // Inline code: `code`
   html = html.replace(/`([^`\n]+)`/g, '<code class="bg-indigo-500/10 px-1.5 py-0.5 rounded text-indigo-300 font-mono text-xs border border-indigo-500/20">$1</code>');
 
+  // File citations: e.g. main.py:123 or src/app.js:45
+  html = html.replace(/([a-zA-Z0-9_\-\.\/]+\.(?:py|js|ts|tsx|jsx|json|yaml|yml|md|html|css)):(\d+)/g, 
+    '<span class="inline-flex items-center gap-1 bg-indigo-500/10 px-2 py-0.5 rounded text-xs text-indigo-300 font-mono border border-indigo-500/20 my-0.5 hover:bg-indigo-500/20 transition-colors">📄 $1:$2</span>');
+
   // Bold: **text**
   html = html.replace(/\*\*([^\*]+)\*\*/g, '<strong class="font-bold text-white">$1</strong>');
 
   // Headers: ### text, ## text, # text
-  html = html.replace(/^### (.*$)/gim, '<h4 class="text-md font-bold text-indigo-300 mt-4 mb-2">$1</h4>');
-  html = html.replace(/^## (.*$)/gim, '<h3 class="text-lg font-bold text-indigo-200 mt-5 mb-2">$1</h3>');
-  html = html.replace(/^# (.*$)/gim, '<h2 class="text-xl font-bold text-white mt-6 mb-3">$1</h2>');
+  html = html.replace(/^### (.*$)/gim, '<h4 class="text-sm font-bold text-indigo-300 mt-4 mb-2">$1</h4>');
+  html = html.replace(/^## (.*$)/gim, '<h3 class="text-md font-bold text-indigo-200 mt-5 mb-2">$1</h3>');
+  html = html.replace(/^# (.*$)/gim, '<h2 class="text-lg font-bold text-white mt-6 mb-3">$1</h2>');
 
   // Bullet points
   html = html.replace(/^\s*-\s+(.*$)/gim, '<li class="ml-4 list-disc text-slate-300">$1</li>');
@@ -44,6 +49,7 @@ function App() {
   const [repos, setRepos] = useState([]);
   const [currentRepo, setCurrentRepo] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   
   // Indexing State
   const [indexUrl, setIndexUrl] = useState('');
@@ -108,14 +114,43 @@ function App() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden text-slate-200">
+    <div className="flex h-screen overflow-hidden text-slate-200 relative">
       
+      {/* Background Animated Orbs wrapper */}
+      <div className="ambient-glow" />
+
+      {/* Collapsed Sidebar Restore Button */}
+      {sidebarCollapsed && (
+        <motion.button 
+          initial={{ opacity: 0, scale: 0.8 }} 
+          animate={{ opacity: 1, scale: 1 }}
+          onClick={() => setSidebarCollapsed(false)}
+          className="fixed left-4 top-6 w-9 h-9 rounded-xl bg-slate-900/90 border border-slate-700/50 flex items-center justify-center cursor-pointer text-slate-400 hover:text-white shadow-lg z-30 transition hover:bg-slate-800"
+        >
+          <ChevronRight size={18} />
+        </motion.button>
+      )}
+
       {/* Sidebar */}
       <motion.aside 
-        initial={{ x: -300 }} animate={{ x: 0 }}
-        className="w-72 bg-surface/90 backdrop-blur-2xl border-r border-indigo-500/10 flex flex-col shrink-0 relative z-20"
+        animate={{ 
+          width: sidebarCollapsed ? 0 : 288,
+          opacity: sidebarCollapsed ? 0 : 1,
+        }}
+        transition={{ type: 'spring', stiffness: 200, damping: 24 }}
+        className="bg-surface/90 backdrop-blur-2xl border-r border-indigo-500/10 flex flex-col shrink-0 relative z-20 overflow-hidden"
       >
-        <div className="p-5 border-b border-indigo-500/10 flex items-center gap-3">
+        {/* Toggle Collapse Button */}
+        {!sidebarCollapsed && (
+          <button 
+            onClick={() => setSidebarCollapsed(true)}
+            className="absolute -right-3 top-6 w-6 h-6 rounded-full bg-slate-900 border border-slate-700/50 flex items-center justify-center cursor-pointer text-slate-400 hover:text-white shadow z-30 transition hover:scale-105 active:scale-95"
+          >
+            <ChevronLeft size={12} />
+          </button>
+        )}
+
+        <div className="p-5 border-b border-indigo-500/10 flex items-center gap-3 w-72">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/30">
             <BrainCircuit size={18} className="text-white" />
           </div>
@@ -125,7 +160,7 @@ function App() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-hide">
+        <div className="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-hide w-72">
           {/* Repositories */}
           <section>
             <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Repositories</h2>
@@ -272,6 +307,167 @@ function FeatureCard({ icon, title, desc, color, bg }) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// Codebase Profile Summary Dashboard Component
+// ════════════════════════════════════════════════════════════════════════════
+function RepoDashboard({ repo, onSelectSuggestion, summaryData, isLoadingSummary, onRefreshSummary }) {
+  if (isLoadingSummary) {
+    return (
+      <motion.div 
+        initial={{ opacity: 0 }} 
+        animate={{ opacity: 1 }} 
+        exit={{ opacity: 0 }} 
+        className="w-full max-w-4xl mx-auto p-6 space-y-6 pt-10"
+      >
+        <div className="h-7 bg-slate-800/40 rounded-lg w-1/3 animate-pulse"></div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="h-20 bg-slate-800/30 rounded-xl border border-white/[0.02] animate-pulse"></div>
+          <div className="h-20 bg-slate-800/30 rounded-xl border border-white/[0.02] animate-pulse"></div>
+          <div className="h-20 bg-slate-800/30 rounded-xl border border-white/[0.02] animate-pulse"></div>
+        </div>
+        <div className="h-80 bg-slate-800/20 rounded-2xl border border-white/[0.02] animate-pulse"></div>
+      </motion.div>
+    );
+  }
+
+  if (!summaryData) {
+    return (
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center justify-center p-16 text-center">
+        <Activity size={32} className="text-indigo-400 animate-spin mb-4" />
+        <p className="text-slate-400 text-sm">Failed to generate codebase profile summary.</p>
+        <button onClick={onRefreshSummary} className="mt-4 px-4 py-2 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-xl text-xs font-semibold flex items-center gap-1.5 hover:bg-indigo-500/20 transition-all">
+          <RefreshCw size={12} /> Try Again
+        </button>
+      </motion.div>
+    );
+  }
+
+  const { summary, metadata } = summaryData;
+  const languages = metadata?.languages || [];
+  const totalChunks = metadata?.total_chunks || 0;
+  const filesSampled = metadata?.files_sampled || 0;
+
+  const SUGGESTIONS = [
+    { text: "Explain the overall architecture and system design of this repo.", label: "Architecture" },
+    { text: "What is the main entry point and setup flow?", label: "Entry Point" },
+    { text: "Identify key modules and their core responsibilities.", label: "Modules" },
+    { text: "What patterns and architectural decisions stand out here?", label: "Design Patterns" }
+  ];
+
+  return (
+    <motion.div 
+      variants={{
+        hidden: { opacity: 0 },
+        show: { opacity: 1, transition: { staggerChildren: 0.08 } }
+      }}
+      initial="hidden" 
+      animate="show"
+      exit="hidden"
+      className="w-full max-w-4xl mx-auto p-6 space-y-8 pt-10"
+    >
+      {/* Title */}
+      <motion.div variants={{ hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0 } }} className="flex justify-between items-center">
+        <div>
+          <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
+            <Layers size={18} className="text-indigo-400" />
+            Codebase Intelligence Profile
+          </h3>
+          <p className="text-xs text-slate-400">High-level analysis generated by RepoSage AI</p>
+        </div>
+        <button 
+          onClick={onRefreshSummary} 
+          title="Force Re-generate Profile Summary"
+          className="p-2 hover:bg-slate-800/80 border border-slate-700/30 text-slate-400 hover:text-white rounded-xl transition flex items-center justify-center"
+        >
+          <RefreshCw size={14} className="hover:rotate-180 transition-transform duration-500" />
+        </button>
+      </motion.div>
+
+      {/* Metadata Cards */}
+      <motion.div 
+        variants={{
+          hidden: { opacity: 0 },
+          show: { opacity: 1, transition: { staggerChildren: 0.05 } }
+        }}
+        className="grid grid-cols-1 md:grid-cols-3 gap-4"
+      >
+        <StatCard 
+          icon={<Terminal size={18} className="text-indigo-400" />} 
+          title="Vector Index Size" 
+          value={`${totalChunks} chunks`}
+          desc="AST-parsed code fragments"
+        />
+        <StatCard 
+          icon={<BarChart2 size={18} className="text-purple-400" />} 
+          title="Codebase Profiled" 
+          value={`${filesSampled} files`}
+          desc="Used for architectural summary"
+        />
+        <StatCard 
+          icon={<BrainCircuit size={18} className="text-emerald-400" />} 
+          title="Detected Tech Stack" 
+          value={languages.join(', ') || 'N/A'}
+          desc="Identified source languages"
+        />
+      </motion.div>
+
+      {/* Summary Content */}
+      <motion.div 
+        variants={{ hidden: { opacity: 0, y: 15 }, show: { opacity: 1, y: 0 } }}
+        className="glass-card glow-hover p-6 border border-white/[0.03] shadow-lg overflow-hidden relative"
+      >
+        <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 opacity-30"></div>
+        <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-4">Architecture Summary</h4>
+        <div 
+          className="prose prose-invert max-w-none text-sm text-slate-300 leading-relaxed space-y-4"
+          dangerouslySetInnerHTML={{ __html: renderMarkdown(summary) }} 
+        />
+      </motion.div>
+
+      {/* Quick Start Suggestions */}
+      <motion.div variants={{ hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0 } }} className="space-y-3">
+        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Suggested Queries</h4>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {SUGGESTIONS.map((s, idx) => (
+            <motion.div
+              whileHover={{ y: -2, scale: 1.01 }}
+              transition={{ type: "spring", stiffness: 400, damping: 30 }}
+              key={idx}
+              onClick={() => onSelectSuggestion(s.text)}
+              className="p-4 bg-slate-900/40 hover:bg-indigo-500/[0.04] border border-white/[0.02] hover:border-indigo-500/20 rounded-xl cursor-pointer transition-colors flex items-center justify-between group shadow-sm"
+            >
+              <div className="space-y-0.5">
+                <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">{s.label}</span>
+                <p className="text-xs font-medium text-slate-300 leading-normal">{s.text}</p>
+              </div>
+              <ChevronRight size={16} className="text-slate-500 group-hover:text-indigo-400 transition-colors transform group-hover:translate-x-0.5" />
+            </motion.div>
+          ))}
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+function StatCard({ icon, title, value, desc }) {
+  return (
+    <motion.div 
+      variants={{ hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0 } }}
+      whileHover={{ y: -2 }}
+      className="p-4 glass-card glow-hover flex items-start gap-3 border border-white/[0.02]"
+    >
+      <div className="p-2.5 bg-slate-800/60 rounded-xl border border-white/[0.04] shrink-0">
+        {icon}
+      </div>
+      <div className="min-w-0">
+        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest block">{title}</span>
+        <h5 className="text-sm font-semibold text-slate-200 mt-0.5 truncate">{value}</h5>
+        <p className="text-[10px] text-slate-400 mt-0.5 truncate">{desc}</p>
+      </div>
+    </motion.div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // Chat Interface Component
 // ════════════════════════════════════════════════════════════════════════════
 function ChatInterface({ repo, messages, setMessages }) {
@@ -279,19 +475,43 @@ function ChatInterface({ repo, messages, setMessages }) {
   const [isTyping, setIsTyping] = useState(false);
   const [agentMode, setAgentMode] = useState(false);
   const [agentStatusText, setAgentStatusText] = useState('');
+  const [summaryData, setSummaryData] = useState(null);
+  const [isLoadingSummary, setIsLoadingSummary] = useState(false);
   const bottomRef = useRef(null);
+
+  useEffect(() => {
+    fetchSummary(false);
+  }, [repo]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isTyping, agentStatusText]);
 
+  const fetchSummary = async (forceRefresh = false) => {
+    setIsLoadingSummary(true);
+    setSummaryData(null);
+    try {
+      const url = `${BACKEND_URL}/repos/${repo}/summary${forceRefresh ? '?refresh=true' : ''}`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        setSummaryData(data);
+      }
+    } catch (e) {
+      console.error("Failed to fetch repo summary", e);
+    }
+    setIsLoadingSummary(false);
+  };
+
   const handleSend = async (e) => {
     e?.preventDefault();
     if (!input.trim() || isTyping) return;
-    
-    const userMsg = input.trim();
+    sendQuery(input.trim());
+  };
+
+  const sendQuery = async (queryText) => {
     setInput('');
-    setMessages(prev => [...prev, { role: 'user', content: userMsg }]);
+    setMessages(prev => [...prev, { role: 'user', content: queryText }]);
     setIsTyping(true);
 
     if (agentMode) {
@@ -305,7 +525,7 @@ function ChatInterface({ repo, messages, setMessages }) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             repo_name: repo,
-            question: userMsg,
+            question: queryText,
             k: 6,
             chat_history: messages.slice(-6)
           })
@@ -352,7 +572,7 @@ function ChatInterface({ repo, messages, setMessages }) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             repo_name: repo,
-            question: userMsg,
+            question: queryText,
             k: 6,
             chat_history: messages.slice(-6)
           })
@@ -470,10 +690,13 @@ function ChatInterface({ repo, messages, setMessages }) {
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-hide">
         {messages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center opacity-40">
-            <Search size={48} className="mb-4 text-slate-600 animate-pulse" />
-            <p className="text-slate-400 text-sm">What would you like to know about {repo}?</p>
-          </div>
+          <RepoDashboard 
+            repo={repo} 
+            onSelectSuggestion={sendQuery} 
+            summaryData={summaryData} 
+            isLoadingSummary={isLoadingSummary} 
+            onRefreshSummary={() => fetchSummary(true)} 
+          />
         ) : (
           messages.map((m, i) => (
             <motion.div 
