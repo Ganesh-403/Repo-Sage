@@ -87,9 +87,10 @@ st.markdown("""
         right: -100px;
         width: 600px;
         height: 600px;
-        background: radial-gradient(circle, rgba(99,102,241,0.06) 0%, transparent 70%);
+        background: radial-gradient(circle, rgba(99,102,241,0.08) 0%, transparent 70%);
         pointer-events: none;
         z-index: 0;
+        animation: breatheOrb 12s ease-in-out infinite alternate;
     }
     .stApp::after {
         content: '';
@@ -98,9 +99,10 @@ st.markdown("""
         left: -100px;
         width: 500px;
         height: 500px;
-        background: radial-gradient(circle, rgba(139,92,246,0.05) 0%, transparent 70%);
+        background: radial-gradient(circle, rgba(139,92,246,0.07) 0%, transparent 70%);
         pointer-events: none;
         z-index: 0;
+        animation: breatheOrb 15s ease-in-out infinite alternate-reverse;
     }
 
     /* Hide Streamlit branding */
@@ -354,14 +356,31 @@ st.markdown("""
         border: 1px solid rgba(30, 41, 59, 0.6);
         border-radius: var(--radius-md);
         padding: 16px 18px;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), 
+                    border-color 0.3s ease, 
+                    box-shadow 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), 
+                    background 0.3s ease;
         cursor: default;
+        position: relative;
+        overflow: hidden;
+    }
+    .feature-card::after {
+        content: '';
+        position: absolute;
+        top: 0; left: -100%; width: 50%; height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.03), transparent);
+        transform: skewX(-20deg);
+        transition: 0.5s ease;
+    }
+    .feature-card:hover::after {
+        left: 150%;
+        transition: 0.7s ease-in-out;
     }
     .feature-card:hover {
-        transform: translateY(-3px);
-        border-color: rgba(99, 102, 241, 0.3);
-        box-shadow: 0 8px 24px rgba(99, 102, 241, 0.08);
-        background: rgba(17, 24, 39, 0.7);
+        transform: translateY(-6px) scale(1.02);
+        border-color: rgba(99, 102, 241, 0.4);
+        box-shadow: 0 12px 32px rgba(99, 102, 241, 0.12);
+        background: rgba(17, 24, 39, 0.8);
     }
     .feature-icon-wrap {
         width: 38px;
@@ -614,28 +633,39 @@ st.markdown("""
         font-family: var(--font-sans) !important;
         font-weight: 600 !important;
         font-size: 0.8rem !important;
-        transition: all 0.25s ease !important;
+        transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
         border: 1px solid var(--border) !important;
         padding: 0.4rem 0.8rem !important;
+        position: relative;
+        overflow: hidden;
     }
     .stButton > button:hover {
-        border-color: rgba(99, 102, 241, 0.4) !important;
-        box-shadow: 0 2px 12px var(--primary-glow) !important;
+        border-color: rgba(99, 102, 241, 0.5) !important;
+        box-shadow: 0 4px 16px var(--primary-glow) !important;
+        transform: translateY(-2px) !important;
+    }
+    .stButton > button:active {
+        transform: translateY(1px) scale(0.97) !important;
     }
     .stFormSubmitButton > button {
         background: linear-gradient(135deg, #6366F1, #7C3AED) !important;
+        background-size: 200% auto !important;
         color: white !important;
         border: none !important;
         border-radius: 6px !important;
         font-weight: 600 !important;
         padding: 0.5rem 1rem !important;
         font-size: 0.82rem !important;
-        transition: all 0.3s ease !important;
-        box-shadow: 0 2px 12px rgba(99, 102, 241, 0.25) !important;
+        transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+        box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25) !important;
     }
     .stFormSubmitButton > button:hover {
-        transform: translateY(-1px) !important;
-        box-shadow: 0 4px 20px rgba(99, 102, 241, 0.35) !important;
+        transform: translateY(-2px) !important;
+        box-shadow: 0 8px 24px rgba(99, 102, 241, 0.4) !important;
+        background-position: right center !important;
+    }
+    .stFormSubmitButton > button:active {
+        transform: translateY(1px) scale(0.96) !important;
     }
 
     /* ═══════ Expander ═══════ */
@@ -687,13 +717,37 @@ st.markdown("""
 
     /* ═══════ Animations ═══════ */
     @keyframes fadeInUp {
-        from { opacity: 0; transform: translateY(16px); }
-        to { opacity: 1; transform: translateY(0); }
+        0% { opacity: 0; transform: translateY(24px) scale(0.98); }
+        100% { opacity: 1; transform: translateY(0) scale(1); }
     }
     @keyframes float {
         0%, 100% { transform: translateY(0px); }
-        50% { transform: translateY(-5px); }
+        50% { transform: translateY(-8px); }
     }
+    @keyframes breatheOrb {
+        0% { transform: scale(1) translate(0px, 0px); opacity: 0.8; }
+        50% { transform: scale(1.1) translate(15px, 10px); opacity: 1; }
+        100% { transform: scale(0.95) translate(-10px, -5px); opacity: 0.8; }
+    }
+    @keyframes slideInRight {
+        0% { opacity: 0; transform: translateX(24px); }
+        100% { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes popIn {
+        0% { opacity: 0; transform: scale(0.9); }
+        60% { opacity: 1; transform: scale(1.05); }
+        100% { opacity: 1; transform: scale(1); }
+    }
+    
+    /* Staggered animation classes applied to container blocks */
+    .stMarkdown > div {
+        animation: fadeInUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+    }
+    .stMarkdown:nth-child(1) > div { animation-delay: 0.05s; }
+    .stMarkdown:nth-child(2) > div { animation-delay: 0.1s; }
+    .stMarkdown:nth-child(3) > div { animation-delay: 0.15s; }
+    .stMarkdown:nth-child(4) > div { animation-delay: 0.2s; }
+    .stMarkdown:nth-child(5) > div { animation-delay: 0.25s; }
 
     /* ═══════ Responsive ═══════ */
     @media (max-width: 768px) {
