@@ -74,7 +74,7 @@ class RepoSummarizer:
             base_url=ollama_base_url,
             model=ollama_model,
             temperature=0,
-            num_predict=800,
+            num_predict=2048,
         )
         self.embed = OllamaEmbeddings(
             base_url=ollama_base_url,

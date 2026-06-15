@@ -208,40 +208,59 @@ class CodeRAGEngine:
         sorted_docs = sorted(fused_scores.items(), key=lambda x: x[1], reverse=True)
         return [doc_map[key] for key, _ in sorted_docs]
 
-    def query(
-        self,
-        question: str,
-        k: int = 6,
-        chat_history: Optional[list[dict]] = None,
-    ) -> dict:
-        """Answer a question about the codebase using RAG.
-
-        Args:
-            question: Natural language question about the code.
-            k: Number of chunks to retrieve (default: 6).
-            chat_history: Optional list of previous messages for context.
-
-        Returns:
-            Dict with 'answer', 'sources', and 'chunks_used'.
-        """
-        # Condense follow-up questions using chat history
-        standalone_question = self._condense_question(
-            question, chat_history or []
-        )
-
-        # Retrieve relevant code chunks using query expansion
-        vector_retriever = self.vectorstore.as_retriever(search_kwargs={"k": k})
-        vector_docs = self.query_transformer.expand_and_retrieve(
-            standalone_question, vector_retriever, k_per_query=k
-        )
+    def _retrieve_and_fuse(self, question: str, k: int) -> tuple[list, list[str]]:
+        """Retrieve relevant code chunks and enrich context in parallel using a ThreadPoolExecutor."""
+        # Expand queries once
+        queries = self.query_transformer.expand_query(question)
         
-        bm25_docs = []
-        if self.bm25_retriever:
-            self.bm25_retriever.k = k
-            bm25_docs = self.query_transformer.expand_and_retrieve(
-                standalone_question, self.bm25_retriever, k_per_query=k
-            )
+        vector_retriever = self.vectorstore.as_retriever(search_kwargs={"k": k})
+        
+        # Parallel retrieval
+        from concurrent.futures import ThreadPoolExecutor
+        
+        def retrieve_vector(q):
+            try:
+                return vector_retriever.invoke(q)
+            except Exception as e:
+                logger.warning(f"Vector retrieval failed for '{q}': {e}")
+                return []
+                
+        def retrieve_bm25(q):
+            try:
+                self.bm25_retriever.k = k
+                return self.bm25_retriever.invoke(q)
+            except Exception as e:
+                logger.warning(f"BM25 retrieval failed for '{q}': {e}")
+                return []
+
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            # Concurrently fetch vector and BM25 matching documents across all queries
+            vector_futures = [executor.submit(retrieve_vector, q) for q in queries]
+            bm25_futures = [executor.submit(retrieve_bm25, q) for q in queries] if self.bm25_retriever else []
             
+            vector_results = [f.result() for f in vector_futures]
+            bm25_results = [f.result() for f in bm25_futures]
+
+        # Flatten and deduplicate lists
+        vector_docs = []
+        seen_vector = set()
+        for docs_list in vector_results:
+            for doc in docs_list:
+                key = doc.page_content.strip()
+                if key not in seen_vector:
+                    seen_vector.add(key)
+                    vector_docs.append(doc)
+                    
+        bm25_docs = []
+        seen_bm25 = set()
+        for docs_list in bm25_results:
+            for doc in docs_list:
+                key = doc.page_content.strip()
+                if key not in seen_bm25:
+                    seen_bm25.add(key)
+                    bm25_docs.append(doc)
+
+        # Reciprocal Rank Fusion
         docs = self._reciprocal_rank_fusion(vector_docs, bm25_docs)[:k]
 
         # GraphRAG Context Enrichment
@@ -264,6 +283,36 @@ class CodeRAGEngine:
                         
             docs.extend(graph_context_docs)
 
+        sources = [
+            f"{d.metadata.get('file', '?')}:{d.metadata.get('line_start', '?')}"
+            for d in docs
+        ]
+        return docs, sources
+
+    def query(
+        self,
+        question: str,
+        k: int = 6,
+        chat_history: Optional[list[dict]] = None,
+    ) -> dict:
+        """Answer a question about the codebase using RAG.
+
+        Args:
+            question: Natural language question about the code.
+            k: Number of chunks to retrieve (default: 6).
+            chat_history: Optional list of previous messages for context.
+
+        Returns:
+            Dict with 'answer', 'sources', and 'chunks_used'.
+        """
+        # Condense follow-up questions using chat history
+        standalone_question = self._condense_question(
+            question, chat_history or []
+        )
+
+        # Retrieve documents concurrently
+        docs, sources = self._retrieve_and_fuse(standalone_question, k)
+
         if not docs:
             return {
                 "answer": "I couldn't find any relevant code in the indexed repository. "
@@ -275,10 +324,6 @@ class CodeRAGEngine:
 
         # Format context and build prompt
         context = self._format_context(docs)
-        sources = [
-            f"{d.metadata.get('file', '?')}:{d.metadata.get('line_start', '?')}"
-            for d in docs
-        ]
 
         messages = [
             SystemMessage(content=SYSTEM_PROMPT.format(repo_name=self.repo_name)),
@@ -315,45 +360,13 @@ class CodeRAGEngine:
             k: Number of chunks to retrieve.
             chat_history: Optional conversation history.
         """
-        # Condense follow-up questions
+        # Condense follow-up questions using chat history
         standalone_question = self._condense_question(
             question, chat_history or []
         )
 
-        # Retrieve using query expansion
-        vector_retriever = self.vectorstore.as_retriever(search_kwargs={"k": k})
-        vector_docs = self.query_transformer.expand_and_retrieve(
-            standalone_question, vector_retriever, k_per_query=k
-        )
-        
-        bm25_docs = []
-        if self.bm25_retriever:
-            self.bm25_retriever.k = k
-            bm25_docs = self.query_transformer.expand_and_retrieve(
-                standalone_question, self.bm25_retriever, k_per_query=k
-            )
-            
-        docs = self._reciprocal_rank_fusion(vector_docs, bm25_docs)[:k]
-
-        # GraphRAG Context Enrichment
-        if self.graph and self.bm25_retriever:
-            doc_lookup = {d.metadata.get("name"): d for d in self.bm25_retriever.docs if d.metadata.get("name")}
-            graph_context_docs = []
-            
-            for doc in docs:
-                name = doc.metadata.get("name")
-                if name and self.graph.has_node(name):
-                    try:
-                        neighbors = list(self.graph.predecessors(name)) + list(self.graph.successors(name))
-                        for n in neighbors[:3]:
-                            if n in doc_lookup and doc_lookup[n] not in docs and doc_lookup[n] not in graph_context_docs:
-                                extra_doc = doc_lookup[n]
-                                extra_doc.metadata["type"] = extra_doc.metadata.get("type", "") + " (Graph Context)"
-                                graph_context_docs.append(extra_doc)
-                    except Exception:
-                        pass
-                        
-            docs.extend(graph_context_docs)
+        # Retrieve documents concurrently
+        docs, sources = self._retrieve_and_fuse(standalone_question, k)
 
         if not docs:
             yield {
@@ -364,10 +377,6 @@ class CodeRAGEngine:
             return
 
         context = self._format_context(docs)
-        sources = [
-            f"{d.metadata.get('file', '?')}:{d.metadata.get('line_start', '?')}"
-            for d in docs
-        ]
 
         messages = [
             SystemMessage(content=SYSTEM_PROMPT.format(repo_name=self.repo_name)),

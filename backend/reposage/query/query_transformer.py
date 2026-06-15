@@ -54,6 +54,8 @@ class QueryTransformer:
         ollama_base_url: str = "http://localhost:11434",
         model: str = "llama3",
     ):
+        import os
+        self.enable_expansion = os.getenv("ENABLE_QUERY_EXPANSION", "false").lower() == "true"
         self.llm = ChatOllama(
             base_url=ollama_base_url,
             model=model,
@@ -70,6 +72,9 @@ class QueryTransformer:
         Returns:
             List of 4-5 queries (original + generated expansions).
         """
+        if not self.enable_expansion:
+            return [question]
+
         queries = [question]  # Always include the original
 
         try:
