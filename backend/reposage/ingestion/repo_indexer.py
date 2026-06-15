@@ -178,17 +178,8 @@ class RepoIndexer:
             try:
                 raw_chunks = chunker.chunk_file(str(file_path))
                 
-                # Contextual Retrieval: Generate file summary and apply to chunks
+                # Bypassing slow Contextual Retrieval for rapid indexing
                 relative_path = str(file_path.relative_to(tmp_path)).replace("\\", "/")
-                try:
-                    with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-                        file_content = f.read()
-                    
-                    file_summary = self.context_gen.generate_file_summary(file_content, relative_path)
-                    if file_summary:
-                        raw_chunks = self.context_gen.enrich_with_file_context(raw_chunks, file_summary)
-                except Exception as e:
-                    logger.warning(f"Contextual retrieval failed for {file_path}: {e}")
                     
             except Exception as e:
                 logger.warning(f"Failed to chunk {file_path}: {e}")
